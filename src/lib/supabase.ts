@@ -1,4 +1,5 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { supabase } from '../supabaseClient';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 const STORAGE_KEY_URL = 'sneaker_supabase_url';
 const STORAGE_KEY_KEY = 'sneaker_supabase_key';
@@ -16,31 +17,14 @@ export function getStoredSupabaseConfig(): { url: string; anonKey: string } {
   };
 }
 
-let supabaseInstance: SupabaseClient | null = null;
-
-export function getSupabase(): SupabaseClient | null {
-  const { url, anonKey } = getStoredSupabaseConfig();
-
-  if (!url || !anonKey || url === 'SUA_URL_DO_SUPABASE_AQUI' || anonKey === 'SUA_ANON_KEY_AQUI') {
-    return null;
-  }
-
-  try {
-    if (!supabaseInstance) {
-      supabaseInstance = createClient(url, anonKey);
-    }
-    return supabaseInstance;
-  } catch (error) {
-    console.error('Erro ao inicializar Supabase:', error);
-    return null;
-  }
+export function getSupabase(): SupabaseClient {
+  return supabase;
 }
 
 export function saveSupabaseConfig(url: string, anonKey: string) {
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEY_URL, url.trim());
     localStorage.setItem(STORAGE_KEY_KEY, anonKey.trim());
-    supabaseInstance = null; // Reset instance to recreate with new credentials
   }
 }
 
@@ -48,49 +32,40 @@ export function clearSupabaseConfig() {
   if (typeof window !== 'undefined') {
     localStorage.removeItem(STORAGE_KEY_URL);
     localStorage.removeItem(STORAGE_KEY_KEY);
-    supabaseInstance = null;
   }
 }
 
 export async function testSupabaseConnection(): Promise<{ success: boolean; message: string; tableFound: boolean }> {
-  const client = getSupabase();
-  if (!client) {
-    return {
-      success: false,
-      message: 'URL ou Chave Anon não configuradas.',
-      tableFound: false,
-    };
-  }
-
   try {
-    const { data, error } = await client.from('products').select('id').limit(1);
+    const { data, error } = await supabase.from('products').select('id').limit(1);
 
     if (error) {
-      // Check if it's a 42P01 table does not exist or permission error
       if (error.code === '42P01' || error.message.includes('relation "products" does not exist')) {
         return {
           success: true,
           tableFound: false,
-          message: 'Conectado ao Supabase com sucesso! Porém a tabela "products" ainda não foi criada. Execute o script SQL fornecido.',
+          message: 'Conectado ao Supabase! Porém a tabela "products" ainda não foi criada. Execute o script SQL no Supabase.',
         };
       }
       return {
         success: false,
         tableFound: false,
-        message: `Erro do Supabase: ${error.message}`,
+        message: `Aviso do Supabase: ${error.message}`,
       };
     }
 
     return {
       success: true,
       tableFound: true,
-      message: `Conectado com sucesso! Tabela "products" ativa (${data?.length ?? 0} registros consultados).`,
+      message: `Conectado com sucesso ao Supabase! Tabela "products" ativa (${data?.length ?? 0} registros encontrados).`,
     };
   } catch (err: any) {
     return {
       success: false,
       tableFound: false,
-      message: `Falha de rede ou configuração inválida: ${err.message || 'Erro desconhecido'}`,
+      message: `Falha de rede ou configuração: ${err.message || 'Erro desconhecido'}`,
     };
   }
 }
+
+export { supabase };

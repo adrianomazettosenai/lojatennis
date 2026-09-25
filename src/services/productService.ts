@@ -1,4 +1,4 @@
-import { getSupabase } from '../lib/supabase';
+import { supabase } from '../supabaseClient';
 import type { Product, Order } from '../types';
 import { INITIAL_PRODUCTS } from '../data/mockProducts';
 
@@ -9,14 +9,7 @@ export interface FetchProductsResult {
 }
 
 export async function fetchProducts(): Promise<FetchProductsResult> {
-  const supabase = getSupabase();
-
-  if (!supabase) {
-    return {
-      products: INITIAL_PRODUCTS,
-      source: 'mock',
-    };
-  }
+  console.log('📡 [Supabase GET/SELECT]: Executando primeira leitura assíncrona da nuvem na tabela "products"...');
 
   try {
     const { data, error } = await supabase
@@ -25,7 +18,7 @@ export async function fetchProducts(): Promise<FetchProductsResult> {
       .order('id', { ascending: true });
 
     if (error) {
-      console.warn('Erro ao buscar produtos no Supabase, usando dados locais:', error.message);
+      console.warn('⚠️ [Supabase DevTools F12] Erro na consulta ou tabela não encontrada:', error.message);
       return {
         products: INITIAL_PRODUCTS,
         source: 'mock',
@@ -34,14 +27,16 @@ export async function fetchProducts(): Promise<FetchProductsResult> {
     }
 
     if (!data || data.length === 0) {
+      console.info('ℹ️ [Supabase DevTools F12] Tabela "products" está vazia.');
       return {
         products: INITIAL_PRODUCTS,
         source: 'mock',
-        error: 'Tabela products está vazia. Exibindo dados de exemplo.',
+        error: 'Tabela products vazia. Exibindo dados locais de demonstração.',
       };
     }
 
-    // Map Supabase snake_case or json columns to Product interface
+    console.log(`✅ [Supabase DevTools F12] Sucesso! ${data.length} produtos carregados diretamente da nuvem:`, data);
+
     const mappedProducts: Product[] = data.map((item: any) => ({
       id: item.id,
       name: item.name,
@@ -66,7 +61,7 @@ export async function fetchProducts(): Promise<FetchProductsResult> {
       source: 'supabase',
     };
   } catch (err: any) {
-    console.error('Falha na requisição ao Supabase:', err);
+    console.error('❌ [Supabase DevTools F12] Exceção na conexão:', err);
     return {
       products: INITIAL_PRODUCTS,
       source: 'mock',
@@ -76,11 +71,6 @@ export async function fetchProducts(): Promise<FetchProductsResult> {
 }
 
 export async function seedSupabaseWithSampleData(): Promise<{ success: boolean; count: number; error?: string }> {
-  const supabase = getSupabase();
-  if (!supabase) {
-    return { success: false, count: 0, error: 'Supabase não está configurado.' };
-  }
-
   try {
     const productsToInsert = INITIAL_PRODUCTS.map((prod) => ({
       name: prod.name,
@@ -105,9 +95,11 @@ export async function seedSupabaseWithSampleData(): Promise<{ success: boolean; 
       .select();
 
     if (error) {
+      console.error('❌ [Supabase DevTools F12] Erro no seed:', error.message);
       return { success: false, count: 0, error: error.message };
     }
 
+    console.log('✅ [Supabase DevTools F12] Seed concluído com sucesso:', data);
     return { success: true, count: data?.length || productsToInsert.length };
   } catch (err: any) {
     return { success: false, count: 0, error: err.message };
@@ -115,7 +107,7 @@ export async function seedSupabaseWithSampleData(): Promise<{ success: boolean; 
 }
 
 export async function submitOrder(order: Order): Promise<{ success: boolean; orderId?: string; error?: string }> {
-  // Save locally in all cases
+  // Salvar no histórico local
   try {
     const localOrders = JSON.parse(localStorage.getItem('sneaker_local_orders') || '[]');
     const localId = `ORD-${Date.now().toString().slice(-6)}`;
@@ -123,19 +115,11 @@ export async function submitOrder(order: Order): Promise<{ success: boolean; ord
     localOrders.unshift(savedOrder);
     localStorage.setItem('sneaker_local_orders', JSON.stringify(localOrders));
   } catch (e) {
-    console.warn('Erro ao salvar pedido localmente:', e);
-  }
-
-  const supabase = getSupabase();
-  if (!supabase) {
-    return {
-      success: true,
-      orderId: `OFFLINE-${Date.now().toString().slice(-6)}`,
-    };
+    console.warn('Aviso: Armazenamento local falhou:', e);
   }
 
   try {
-    // Attempt saving to 'orders' table in Supabase
+    console.log('📡 [Supabase INSERT]: Enviando pedido para a nuvem...', order);
     const { data: orderData, error: orderError } = await supabase
       .from('orders')
       .insert({
@@ -153,15 +137,15 @@ export async function submitOrder(order: Order): Promise<{ success: boolean; ord
       .single();
 
     if (orderError) {
-      console.warn('Aviso: Pedido não pôde ser gravado no Supabase (tabela orders ausente ou regras RLS):', orderError.message);
-      // Still succeed locally
+      console.warn('⚠️ [Supabase DevTools F12] Pedido salvo localmente (aviso Supabase):', orderError.message);
       return {
         success: true,
         orderId: `LOC-${Date.now().toString().slice(-6)}`,
       };
     }
 
-    // If order was created and order_items table exists, try inserting items
+    console.log('✅ [Supabase DevTools F12] Pedido registrado no Supabase:', orderData);
+
     if (orderData?.id && order.items.length > 0) {
       try {
         const itemsToInsert = order.items.map((it) => ({
@@ -173,7 +157,7 @@ export async function submitOrder(order: Order): Promise<{ success: boolean; ord
         }));
         await supabase.from('order_items').insert(itemsToInsert);
       } catch (itemErr) {
-        console.warn('Nota: Inserção de itens detalhados ignorada:', itemErr);
+        console.warn('Nota: Inserção de itens complementares:', itemErr);
       }
     }
 
