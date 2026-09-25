@@ -1,0 +1,63 @@
+name: Gerar APK Android (Capacitor)
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch: # Permite gerar o APK manualmente pelo botão "Run workflow" no GitHub
+
+jobs:
+  build-apk:
+    name: Compilar APK Android
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Clonar repositório
+        uses: actions/checkout@v4
+
+      - name: ☕ Configurar Java JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: 🤖 Configurar Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: 📦 Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 🔑 Configurar Variáveis de Ambiente Supabase (.env)
+        run: |
+          echo "VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL || 'https://rvquspipagnsavrtjhdl.supabase.co' }}" > .env
+          echo "VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY || 'sb_publishable_sYk8SETbtDTV7C8MiC4H5w_CwtAv0xo' }}" >> .env
+          cp .env .env.local
+
+      - name: 📥 Instalar dependências npm
+        run: npm install
+
+      - name: 🏗️ Compilar aplicação Web (Vite + React)
+        run: npm run build
+
+      - name: 🔄 Sincronizar Capacitor com a pasta Android
+        run: npx cap sync android
+
+      - name: ⚙️ Dar permissão de execução ao Gradle Wrapper
+        run: chmod +x ./android/gradlew
+
+      - name: 📱 Compilar APK Android (Debug)
+        run: |
+          cd android
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: 📤 Disponibilizar APK para Download (Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: SNEAKERVAULT-Android-Debug-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 30
